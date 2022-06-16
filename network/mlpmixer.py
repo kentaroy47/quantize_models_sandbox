@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from functools import partial
 from einops.layers.torch import Rearrange, Reduce
-from module import ActFn, Conv2d, Linear
+from module import ActFn, Conv2d, Linear, Conv1d
 
 pair = lambda x: x if isinstance(x, tuple) else (x, x)
 
@@ -18,6 +18,7 @@ class PreNormResidual(nn.Module):
 # For activation quantization
 class Activation(nn.Module):
     def __init__(self, k):
+        super().__init__()
         self.ActFn = ActFn.apply
         self.k = k
         self.alpha = nn.Parameter(torch.tensor(10.))
@@ -28,10 +29,10 @@ class Activation(nn.Module):
 def FeedForward(dim, expansion_factor = 4, dropout = 0., dense = Linear, k = 8):
     inner_dim = int(dim * expansion_factor)
     return nn.Sequential(
-        dense(dim, inner_dim, k),
+        dense(dim, inner_dim, bitwidth=k),
         Activation(k),
         nn.Dropout(dropout),
-        dense(inner_dim, dim, k),
+        dense(inner_dim, dim, bitwidth=k),
         nn.Dropout(dropout)
     )
 
@@ -39,14 +40,14 @@ def MLPMixer(*, image_size, channels, patch_size, dim, depth, num_classes, expan
     image_h, image_w = pair(image_size)
     assert (image_h % patch_size) == 0 and (image_w % patch_size) == 0, 'image must be divisible by patch size'
     num_patches = (image_h // patch_size) * (image_w // patch_size)
-    chan_first, chan_last = partial(nn.Conv1d, kernel_size = 1), nn.Linear # First Linear is not quantized
+    chan_first, chan_last = partial(Conv1d, kernel_size = 1), Linear # First Linear is not quantized
 
     return nn.Sequential(
         Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1 = patch_size, p2 = patch_size),
         nn.Linear((patch_size ** 2) * channels, dim),
         *[nn.Sequential(
-            PreNormResidual(dim, FeedForward(num_patches, expansion_factor, dropout, chan_first, k)),
-            PreNormResidual(dim, FeedForward(dim, expansion_factor_token, dropout, chan_last, k))
+            PreNormResidual(dim, FeedForward(num_patches, expansion_factor, dropout, chan_first, k=k)),
+            PreNormResidual(dim, FeedForward(dim, expansion_factor_token, dropout, chan_last, k=k))
         ) for _ in range(depth)],
         nn.LayerNorm(dim),
         Reduce('b n c -> b c', 'mean'),
