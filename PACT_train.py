@@ -2,7 +2,7 @@
 '''
 
 Train CIFAR10 with PyTorch and Vision Transformers!
-written by @kentaroy47, @arutema47
+written by @kentaroy47,
 
 '''
 
@@ -37,10 +37,10 @@ parser.add_argument('--amp', action='store_false', help='enable AMP training')
 parser.add_argument('--mixup', action='store_true', help='add mixup augumentations')
 parser.add_argument('--quant', action='store_true', help='quantize model')
 parser.add_argument('--K', default=4, type=int)
-parser.add_argument('--net', default='resnet18')
+parser.add_argument('--net', default='resnet20')
 parser.add_argument('--bs', default='512')
 parser.add_argument('--dataset', default='cifar10')
-parser.add_argument('--n_epochs', type=int, default='80')
+parser.add_argument('--n_epochs', type=int, default='200')
 parser.add_argument('--patch', default='4', type=int)
 parser.add_argument('--cos', action='store_false', help='Train with cosine annealing scheduling')
 args = parser.parse_args()
@@ -58,12 +58,10 @@ if args.amp:
 if args.quant:
     watermark += "_quant{}".format(args.K)
 
-wandb.init(project="pact-2",
+wandb.init(project="pact_cim",
            name=watermark)
 wandb.config.update(args)
 
-if args.cos:
-    from warmup_scheduler import GradualWarmupScheduler
 if args.aug:
     import albumentations
 bs = int(args.bs)
@@ -261,4 +259,3 @@ for epoch in range(start_epoch, args.n_epochs):
 
 # writeout wandb
 wandb.save("wandb_{}.h5".format(args.net))
-    
