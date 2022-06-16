@@ -1,3 +1,4 @@
+import torch
 from torch import nn
 from functools import partial
 from einops.layers.torch import Rearrange, Reduce
@@ -14,17 +15,27 @@ class PreNormResidual(nn.Module):
     def forward(self, x):
         return self.fn(self.norm(x)) + x
 
-def FeedForward(dim, expansion_factor = 4, dropout = 0., dense = Linear):
+# For activation quantization
+class Activation(nn.Module):
+    def __init__(self, k):
+        self.ActFn = ActFn.apply
+        self.k = k
+        self.alpha = nn.Parameter(torch.tensor(10.))
+    
+    def forward(self, x):
+        return self.ActFn(x, self.alpha, self.k)
+
+def FeedForward(dim, expansion_factor = 4, dropout = 0., dense = Linear, k = 8):
     inner_dim = int(dim * expansion_factor)
     return nn.Sequential(
-        dense(dim, inner_dim),
-        nn.GELU(),
+        dense(dim, inner_dim, k),
+        Activation(k),
         nn.Dropout(dropout),
-        dense(inner_dim, dim),
+        dense(inner_dim, dim, k),
         nn.Dropout(dropout)
     )
 
-def MLPMixer(*, image_size, channels, patch_size, dim, depth, num_classes, expansion_factor = 4, expansion_factor_token = 0.5, dropout = 0.):
+def MLPMixer(*, image_size, channels, patch_size, dim, depth, num_classes, expansion_factor = 4, expansion_factor_token = 0.5, dropout = 0., k=8):
     image_h, image_w = pair(image_size)
     assert (image_h % patch_size) == 0 and (image_w % patch_size) == 0, 'image must be divisible by patch size'
     num_patches = (image_h // patch_size) * (image_w // patch_size)
@@ -34,10 +45,10 @@ def MLPMixer(*, image_size, channels, patch_size, dim, depth, num_classes, expan
         Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1 = patch_size, p2 = patch_size),
         nn.Linear((patch_size ** 2) * channels, dim),
         *[nn.Sequential(
-            PreNormResidual(dim, FeedForward(num_patches, expansion_factor, dropout, chan_first)),
-            PreNormResidual(dim, FeedForward(dim, expansion_factor_token, dropout, chan_last))
+            PreNormResidual(dim, FeedForward(num_patches, expansion_factor, dropout, chan_first, k)),
+            PreNormResidual(dim, FeedForward(dim, expansion_factor_token, dropout, chan_last, k))
         ) for _ in range(depth)],
         nn.LayerNorm(dim),
         Reduce('b n c -> b c', 'mean'),
-        Linear(dim, num_classes)
+        nn.Linear(dim, num_classes)
     )
