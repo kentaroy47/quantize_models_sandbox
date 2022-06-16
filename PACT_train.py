@@ -136,6 +136,16 @@ elif args.net=="swin":
     net = swin_t(window_size=args.patch,
                 num_classes=10,
                 downscaling_factors=(2,2,2,1))
+elif args.net=="mlpmixer":
+    from network.mlpmixer import MLPMixer
+    net = MLPMixer(
+    image_size = (32, 32),
+    channels = 3,
+    patch_size = args.patch,
+    dim = 256,
+    depth = 6,
+    num_classes = 10
+)
 
 net = net.to(device)
 if device == 'cuda':

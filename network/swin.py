@@ -4,7 +4,7 @@ import torch
 from torch import nn, einsum
 import numpy as np
 from einops import rearrange, repeat
-
+from module import ActFn, Conv2d, Linear
 
 class CyclicShift(nn.Module):
     def __init__(self, displacement):
