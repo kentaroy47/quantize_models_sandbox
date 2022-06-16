@@ -101,6 +101,7 @@ class Linear(nn.Linear):
 		self.quantize = DoReFaQuant.apply
 		self.bitwidth = bitwidth
 		self.noise = GaussianNoise(sigma=noise, inference=inference)
+		
 	def forward(self, x):
 		vhat = self.quantize(self.weight, self.bitwidth)
 		y = F.linear(x, vhat, self.bias)
@@ -108,10 +109,11 @@ class Linear(nn.Linear):
 
 class Conv1d(nn.Conv1d):
 	def __init__(self, in_places, out_planes, kernel_size, stride=1, padding = 0, groups=1, dilation=1, bias = False, bitwidth = 8, noise = 0, inference=False):
-		super(Conv1d, self).__init__(in_places, out_planes, bias)
+		super(Conv1d, self).__init__(in_places, out_planes, kernel_size, stride, padding, groups, dilation, bias)
 		self.quantize = DoReFaQuant.apply
 		self.bitwidth = bitwidth
 		self.noise = GaussianNoise(sigma=noise, inference=inference)
+
 	def forward(self, x):
 		vhat = self.quantize(self.weight, self.bitwidth)
 		y = F.conv1d(x, vhat, self.bias, self.stride, self.padding, self.dilation, self.groups)
