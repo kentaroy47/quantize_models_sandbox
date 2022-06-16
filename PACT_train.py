@@ -14,6 +14,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 import numpy as np
+from randomaug import RandAugment
 
 import torchvision
 import torchvision.transforms as transforms
@@ -62,8 +63,6 @@ wandb.init(project="pact_cim",
            name=watermark)
 wandb.config.update(args)
 
-if args.aug:
-    import albumentations
 bs = int(args.bs)
 
 use_amp = args.amp
@@ -80,6 +79,10 @@ transform_train = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
+# Add RandAugment with N, M(hyperparameter)
+if args.aug:  
+    N = 2; M = 14;
+    transform_train.transforms.insert(0, RandAugment(N, M))
 
 transform_test = transforms.Compose([
     transforms.ToTensor(),
@@ -112,18 +115,27 @@ elif args.net=="resnext":
     from network.resnext import ResNeXt29_4x64d
     net = ResNeXt29_4x64d()
 elif args.net=="vit":
+    from network.vit import ViT
     # ViT for cifar10
     net = ViT(
     image_size = 32,
     patch_size = args.patch,
     num_classes = 10,
-    dim = 512,
+    dim = 256,
     depth = 6,
     heads = 8,
     mlp_dim = 512,
     dropout = 0.1,
     emb_dropout = 0.1
 )
+elif args.net=="convmix":
+    from network.convmixer import ConvMixer
+    net = ConvMixer(256, 16, kernel_size=8, patch_size=1, n_classes=10)
+elif args.net=="swin":
+    from network.swin import swin_t
+    net = swin_t(window_size=args.patch,
+                num_classes=10,
+                downscaling_factors=(2,2,2,1))
 
 net = net.to(device)
 if device == 'cuda':
