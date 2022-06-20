@@ -370,7 +370,10 @@ class QuantizedLinear(nn.Linear):
             return F.linear(self.quant(input, self.alpha, self.k), 
                         self.quantize_w(self.weight) * self.weight_rescale, 
                         self.bias)
-        
+
+# 入力される時に量子化が実行される
+# https://github.com/cornell-zhang/dnn-gating
+# precision gating
 class PGConv2d(nn.Conv2d):
     """ 
     A convolutional layer computed as out = out_msb + mask . out_lsb
