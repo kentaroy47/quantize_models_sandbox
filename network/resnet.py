@@ -33,6 +33,7 @@ import torch.nn.functional as F
 import torch.nn.init as init
 from module import ActFn, Conv2d, Linear
 from torch.autograd import Variable
+from pact_utils import QuantizedConv2d, PactReLU
 
 __all__ = ['ResNet', 'resnet20', 'resnet34']
 
@@ -51,19 +52,19 @@ class LambdaLayer(nn.Module):
         return self.lambd(x)
 
 
-class BasicBlock(nn.Module):
+class BasicBlockPACT(nn.Module):
     expansion = 1
 
-    def __init__(self, in_planes, planes, stride=1, k=8, expansion=1):
-        super(BasicBlock, self).__init__()
-        self.k = k
+    def __init__(self, in_planes, planes, stride=1, wbits=8, abits=8, expansion=1):
+        super(BasicBlockPACT, self).__init__()
+        self.abits = abits
         self.expansion = expansion
-        # self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.conv1 = Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False, bitwidth = k)
+
+        self.conv1 = Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False, bitwidth = wbits)
         self.bn1 = nn.BatchNorm2d(planes)
         self.alpha1 = nn.Parameter(torch.tensor(10.))
-        # self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
-        self.conv2 = Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False, bitwidth = k)
+
+        self.conv2 = Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False, bitwidth = wbits)
         self.bn2 = nn.BatchNorm2d(planes)
         self.alpha2 = nn.Parameter(torch.tensor(10.))
         self.ActFn = ActFn.apply
@@ -71,54 +72,79 @@ class BasicBlock(nn.Module):
         if stride != 1 or in_planes != planes:
               # original resnet shortcut
               self.shortcut = nn.Sequential(
-                    # nn.Conv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False),
-                    Conv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False),
+                    Conv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False, bitwidth = wbits),
                     nn.BatchNorm2d(self.expansion * planes)
               )
         else: # nothing done if stride or inplanes do not differ
           self.shortcut = nn.Sequential()
 
     def forward(self, x):
-        # out = F.relu(self.bn1(self.conv1(x)))
-        out = self.ActFn(self.bn1(self.conv1(x)), self.alpha1, self.k)
+        out = self.ActFn(self.bn1(self.conv1(x)), self.alpha1, self.abits)
         out = self.bn2(self.conv2(out))
         out += self.shortcut(x)
-        # out = F.relu(out)
-        out = self.ActFn(out, self.alpha2, self.k)
+        out = self.ActFn(out, self.alpha2, self.abits)
         return out
 
+class BasicBlockUQ(nn.Module):
+    expansion = 1
+
+    def __init__(self, in_planes, planes, stride=1, wbits=4, abits=4, pact=False, expansion=1):
+        super(BasicBlockUQ, self).__init__()
+        
+        self.expansion = expansion
+        self.conv1 = QuantizedConv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False, wbits=wbits, abits=abits)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv2 = QuantizedConv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False, wbits=wbits, abits=abits)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.relu = PactReLU() if pact else nn.ReLU()        
+        
+        if stride != 1 or in_planes != planes:
+              # original resnet shortcut
+              self.shortcut = nn.Sequential(
+                    QuantizedConv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False, wbits=wbits, abits=abits),
+                    nn.BatchNorm2d(self.expansion * planes)
+              )
+        else: # nothing done if stride or inplanes do not differ
+          self.shortcut = nn.Sequential()
+
+    def forward(self, x):
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out += self.shortcut(x)
+        out = self.relu(out)
+        return out
 
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, num_classes=10, K=8):
+    def __init__(self, block, num_blocks, num_classes=10, abits=8, wbits=8, pact=False):
         super(ResNet, self).__init__()
+        from pact_utils import QuantizedConv2d, QuantizedLinear
+        self.abits = abits
+        self.wbits = wbits
         self.in_planes = 16
-        self.k = K
+        self.abits = abits
 
-        # self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
-        self.conv1 = Conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False, bitwidth = 8)
+        self.conv1 = QuantizedConv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False, abits=8, wbits=8)
         self.bn1 = nn.BatchNorm2d(16)
         self.alpha1 = nn.Parameter(torch.tensor(10.))
         self.ActFn = ActFn.apply
         self.layer1 = self._make_layer(block, 16, num_blocks[0], stride=1, expansion=1)
         self.layer2 = self._make_layer(block, 32, num_blocks[1], stride=2, expansion=1)
         self.layer3 = self._make_layer(block, 64, num_blocks[2], stride=2, expansion=1)
-
-        # self.linear = nn.Linear(64, num_classes)
-        self.linear = Linear(64, num_classes, bitwidth = 8)
+        self.relu = nn.ReLU()
+        self.linear = QuantizedLinear(64, num_classes, abits=abits, wbits=wbits)
         self.apply(_weights_init)
 
     def _make_layer(self, block, planes, num_blocks, stride, expansion):
         strides = [stride] + [1]*(num_blocks-1)
         layers = []
         for stride in strides:
-            layers.append(block(self.in_planes, planes, stride, self.k, expansion))
+            layers.append(block(self.in_planes, planes, stride, self.wbits, self.abits, expansion))
             self.in_planes = planes * block.expansion
 
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        # out = F.relu(self.bn1(self.conv1(x)))
-        out = self.ActFn(self.bn1(self.conv1(x)), self.alpha1, self.k)
+        out = self.relu(self.bn1(self.conv1(x)))
         out = self.layer1(out)
         out = self.layer2(out)
         out = self.layer3(out)
@@ -128,9 +154,12 @@ class ResNet(nn.Module):
         return out
 
 
-def resnet20(k=8):
-    print("bit width:", k)
-    return ResNet(BasicBlock, [3, 3, 3], K=k)
+def resnet20(abits, wbits, pact=False):
+    print("abit/wbit:", abits, wbits)
+    if not pact:
+        return ResNet(BasicBlockUQ, [3, 3, 3], abits=abits, wbits=wbits)
+    else:
+        return ResNet(BasicBlockPACT, [3, 3, 3], abits=abits, wbits=wbits)
 
 def test(net):
     import numpy as np
