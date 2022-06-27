@@ -104,11 +104,11 @@ class ResNet(nn.Module):
             self.in_planes = 64
             self.conv1 = QuantizedConv2d(3, self.in_planes, kernel_size=3, stride=1, padding=1, bias=False, abits=8, wbits=8)
             self.bn1 = nn.BatchNorm2d(self.in_planes)
-            self.layer1 = self._make_layer(block, self.in_planes, num_blocks[0], stride=1, expansion=1)
-            self.layer2 = self._make_layer(block, self.in_planes*2, num_blocks[1], stride=2, expansion=1)
-            self.layer3 = self._make_layer(block, self.in_planes*4, num_blocks[2], stride=2, expansion=1)
-            self.layer3 = self._make_layer(block, self.in_planes*8, num_blocks[3], stride=2, expansion=1)
-            self.linear = QuantizedLinear(self.in_planes*8, num_classes, abits=abits, wbits=wbits)
+            self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1, expansion=1)
+            self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2, expansion=1)
+            self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2, expansion=1)
+            self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2, expansion=1)
+            self.linear = QuantizedLinear(512, num_classes, abits=abits, wbits=wbits)
 
     def _make_layer(self, block, planes, num_blocks, stride, expansion):
         strides = [stride] + [1]*(num_blocks-1)
