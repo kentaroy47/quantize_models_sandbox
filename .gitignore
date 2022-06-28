@@ -9,3 +9,5 @@
 wandb
 log
 train
+data
+*nohup*
