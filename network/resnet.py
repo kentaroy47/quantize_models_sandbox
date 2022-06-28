@@ -187,6 +187,21 @@ def resnet20(abits, wbits, pact=False, shallow=True, noquant=False):
         else:
             return ResNet(BasicBlockPACT, blocks, abits=abits, wbits=wbits, shallow=shallow)
 
+def resnet34(abits, wbits, pact=False, shallow=True, noquant=False):
+    print("abit/wbit:", abits, wbits)
+    if shallow:
+        blocks = [6,6,6]
+    else:
+        blocks = [3,4,6,3]
+    if noquant:
+        return ResNet(BasicBlock, blocks, abits=abits, wbits=wbits, shallow=shallow, quant=False)
+    else:
+        if not pact:
+            return ResNet(BasicBlockUQ, blocks, abits=abits, wbits=wbits, shallow=shallow)
+        else:
+            return ResNet(BasicBlockPACT, blocks, abits=abits, wbits=wbits, shallow=shallow)
+
+
 def test(net):
     import numpy as np
     total_params = 0
