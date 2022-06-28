@@ -249,7 +249,7 @@ testloader = torch.utils.data.DataLoader(testset, batch_size=bs, shuffle=False, 
 # In[10]:
 
 
-from network.resnet import resnet20
+from network.resnet import resnet20, resnet34
 net = resnet20(abits=8, wbits=8, pact=False, shallow=False)
 
 
@@ -333,7 +333,7 @@ else:
 
 for shallow in [True, False]:
     for k in range(3,9):
-        net = resnet20(k,k,False,shallow,NOQUANT)
+        net = resnet34(k,k,False,shallow,NOQUANT)
         
         if PRETRAIN:
             if shallow:
@@ -348,7 +348,7 @@ for shallow in [True, False]:
 
         # Track experiment with wandb
         import wandb
-        watermark = "resnet20_quant_k{}".format(k)
+        watermark = "resnet34_quant_k{}".format(k)
 
         if shallow: 
             watermark+="_shallow"
@@ -399,7 +399,7 @@ for shallow in [True, False]:
             print("Best prec1 : ", best_prec1)
             if is_best:
                 torch.save(net.state_dict(), os.path.join(f'models/{watermark}.pth'))
-        run.finish()
+        run.finish() # end wandb run
 
 # In[ ]:
 
