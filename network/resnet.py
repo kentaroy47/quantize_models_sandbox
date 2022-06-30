@@ -108,9 +108,63 @@ class BasicBlockUQ(nn.Module):
         out += self.shortcut(x)
         out = self.relu(out)
         return out
+    
+class Bottleneck(nn.Module):
+    expansion = 4
+
+    def __init__(self, in_planes, planes, stride=1, wbits=4, abits=4, pact=False, ):
+        super(Bottleneck, self).__init__()
+        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv3 = nn.Conv2d(planes, self.expansion*planes, kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(self.expansion*planes)
+
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_planes != self.expansion*planes:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(self.expansion*planes)
+            )
+
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = F.relu(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))
+        out += self.shortcut(x)
+        out = F.relu(out)
+        return out
+    
+class BottleneckUQ(nn.Module):
+    expansion = 4
+
+    def __init__(self, in_planes, planes, stride=1, wbits=4, abits=4, pact=False):
+        super(BottleneckUQ, self).__init__()
+        self.conv1 = QuantizedConv2d(in_planes, planes, kernel_size=1, bias=False, wbits=wbits, abits=abits)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv2 = QuantizedConv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False, wbits=wbits, abits=abits)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv3 = QuantizedConv2d(planes, self.expansion*planes, kernel_size=1, bias=False, wbits=wbits, abits=abits)
+        self.bn3 = nn.BatchNorm2d(self.expansion*planes)
+
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_planes != self.expansion*planes:
+            self.shortcut = nn.Sequential(
+                QuantizedConv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False, wbits=wbits, abits=abits),
+                nn.BatchNorm2d(self.expansion*planes)
+            )
+
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = F.relu(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))
+        out += self.shortcut(x)
+        out = F.relu(out)
+        return out
 
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, num_classes=10, abits=8, wbits=8, pact=False, shallow=True, quant=True):
+    def __init__(self, block, num_blocks, num_classes=10, abits=8, wbits=8, pact=False, shallow=True, quant=True, expansion=1):
         """
         shallow = True follows the resnet in pact and various works.
         shallow = False is the standard resnet implementation.
@@ -132,7 +186,7 @@ class ResNet(nn.Module):
             self.layer2 = self._make_layer(block, 32, num_blocks[1], stride=2, expansion=1)
             self.layer3 = self._make_layer(block, 64, num_blocks[2], stride=2, expansion=1)
             if quant:
-                self.linear = QuantizedLinear(64, num_classes, abits=abits, wbits=wbits)
+                self.linear = QuantizedLinear(64*expansion, num_classes, abits=abits, wbits=wbits)
             else:
                 self.linear = nn.Linear(64, num_classes)
         else:
@@ -147,7 +201,7 @@ class ResNet(nn.Module):
             self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2, expansion=1)
             self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2, expansion=1)
             if quant:
-                self.linear = QuantizedLinear(512, num_classes, abits=abits, wbits=wbits)
+                self.linear = QuantizedLinear(512*expansion, num_classes, abits=abits, wbits=wbits)
             else:
                 self.linear = nn.Linear(512, num_classes)
 
@@ -201,6 +255,19 @@ def resnet34(abits, wbits, pact=False, shallow=True, noquant=False):
         else:
             return ResNet(BasicBlockPACT, blocks, abits=abits, wbits=wbits, shallow=shallow)
 
+def resnet50(abits, wbits, pact=False, shallow=True, noquant=False):
+    print("abit/wbit:", abits, wbits)
+    if shallow:
+        blocks = [6,6,6]
+    else:
+        blocks = [3,4,6,3]
+    if noquant:
+        return ResNet(Bottleneck, blocks, abits=abits, wbits=wbits, shallow=shallow, quant=False, expansion=4)
+    else:
+        if not pact:
+            return ResNet(BottleneckUQ, blocks, abits=abits, wbits=wbits, shallow=shallow, expansion=4)
+        else:
+            return ResNet(BottleneckUQ, blocks, abits=abits, wbits=wbits, shallow=shallow, expansion=4)
 
 def test(net):
     import numpy as np
