@@ -331,7 +331,7 @@ if NOQUANT_TRAIN:
 else:
     NOQUANT = False
 
-for shallow in [True, False]:
+for shallow in [False]:
     for k in range(3,9):
         net = resnet50(k,k,False,shallow,NOQUANT)
         
