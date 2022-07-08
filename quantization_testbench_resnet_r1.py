@@ -12,7 +12,7 @@ NOQUANT_TRAIN = False
 PRETRAIN = False
 n_epochs = 200
 randamaug = True
-bs = 2048
+bs = 1024
 use_amp = True
 lr = 1e-3
 
