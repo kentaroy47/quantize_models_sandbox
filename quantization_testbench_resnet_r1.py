@@ -12,7 +12,7 @@ NOQUANT_TRAIN = False
 PRETRAIN = False
 n_epochs = 200
 randamaug = True
-bs = 2048
+bs = 1024
 use_amp = True
 lr = 1e-3
 
@@ -331,7 +331,7 @@ if NOQUANT_TRAIN:
 else:
     NOQUANT = False
 
-for shallow in [True, False]:
+for shallow in [False]:
     for k in range(3,9):
         net = resnet50(k,k,False,shallow,NOQUANT)
         
