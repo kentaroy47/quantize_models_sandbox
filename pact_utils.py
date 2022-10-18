@@ -307,6 +307,38 @@ class TorchQuantize(nn.Module):
 ##  Layer
 ##########
 
+class GaussianNoise(nn.Module):
+    """Gaussian noise regularizer.
+
+    Args:
+        sigma (float, optional): relative standard deviation used to generate the
+            noise. Relative means that it will be multiplied by the magnitude of
+            the value your are adding the noise to. This means that sigma can be
+            the same regardless of the scale of the vector.
+        is_relative_detach (bool, optional): whether to detach the variable before
+            computing the scale of the noise. If `False` then the scale of the noise
+            won't be seen as a constant but something to optimize: this will bias the
+            network to generate vectors with smaller values.
+    """
+
+    def __init__(self, sigma=0.1, is_relative_detach=False, inference=False, white=False):
+        super().__init__()
+        self.sigma = sigma
+        self.is_relative_detach = is_relative_detach
+        self.noise = torch.tensor(0).to("cuda")
+        self.inference = inference
+        self.white = white
+
+    def forward(self, x):
+        if (self.training and self.sigma > 0) or self.inference:
+            scale = self.sigma * x.detach() if self.is_relative_detach else self.sigma * x
+            if not self.white:
+                sampled_noise = self.noise.repeat(*x.size()).float().normal_() * self.sigma
+            else:
+                sampled_noise = self.noise.repeat(*x.size()).float().random_(-1000000,1000000) * self.sigma / 1000000
+            x = x + sampled_noise
+        return x 
+
 
 class QuantizedConv2d(nn.Conv2d):
     """ 
@@ -342,7 +374,7 @@ class QuantizedLinear(nn.Linear):
     """ 
     A fully connected layer with its weight tensor and input tensor quantized. 
     """
-    def __init__(self, in_features, out_features, bias=True, wbits=0, abits=0, pact=False):
+    def __init__(self, in_features, out_features, bias=True, wbits=0, abits=0, pact=False, noise=0, half=False, white=False):
         super(QuantizedLinear, self).__init__(in_features, out_features, bias)
         self.quantize_w = TorchQuantize(wbits)
         self.quantize_a = TorchQuantize(abits)
@@ -352,8 +384,12 @@ class QuantizedLinear(nn.Linear):
         self.quant = ActFn.apply
         self.k = abits
         if pact:
-            self.alpha = nn.Parameter(torch.tensor(2.)) # trainable clipping factor for PACT
+            self.alpha = nn.Parameter(torch.tensor(1.)) # trainable clipping factor for PACT
         self.pact = pact
+        if half:
+            self.noise = GaussianNoise(sigma=noise/2, inference=True, white=white)
+        else:
+            self.noise = GaussianNoise(sigma=noise, inference=True, white=white)
 
     def forward(self, input):
         """ 
@@ -363,11 +399,11 @@ class QuantizedLinear(nn.Linear):
         4. perform matrix multiplication 
         """
         if not self.pact:
-              return F.linear(self.quantize_a(input), 
+              return F.linear(self.noise(self.quantize_a(input)), 
                         self.quantize_w(self.weight) * self.weight_rescale, 
                         self.bias)
         else:
-            return F.linear(self.quant(input, self.alpha, self.k), 
+            return F.linear(self.noise(self.quant(input, self.alpha, self.k)), 
                         self.quantize_w(self.weight) * self.weight_rescale, 
                         self.bias)
 
