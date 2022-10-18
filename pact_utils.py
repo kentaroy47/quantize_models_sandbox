@@ -321,17 +321,21 @@ class GaussianNoise(nn.Module):
             network to generate vectors with smaller values.
     """
 
-    def __init__(self, sigma=0.1, is_relative_detach=True, inference=False):
+    def __init__(self, sigma=0.1, is_relative_detach=False, inference=False, white=False):
         super().__init__()
         self.sigma = sigma
         self.is_relative_detach = is_relative_detach
         self.noise = torch.tensor(0).to("cuda")
         self.inference = inference
+        self.white = white
 
     def forward(self, x):
         if (self.training and self.sigma > 0) or self.inference:
             scale = self.sigma * x.detach() if self.is_relative_detach else self.sigma * x
-            sampled_noise = self.noise.repeat(*x.size()).float().normal_() * scale
+            if not self.white:
+                sampled_noise = self.noise.repeat(*x.size()).float().normal_() * self.sigma
+            else:
+                sampled_noise = self.noise.repeat(*x.size()).float().random_(-1000000,1000000) * self.sigma / 1000000
             x = x + sampled_noise
         return x 
 
@@ -370,7 +374,7 @@ class QuantizedLinear(nn.Linear):
     """ 
     A fully connected layer with its weight tensor and input tensor quantized. 
     """
-    def __init__(self, in_features, out_features, bias=True, wbits=0, abits=0, pact=False, noise=0):
+    def __init__(self, in_features, out_features, bias=True, wbits=0, abits=0, pact=False, noise=0, half=False, white=False):
         super(QuantizedLinear, self).__init__(in_features, out_features, bias)
         self.quantize_w = TorchQuantize(wbits)
         self.quantize_a = TorchQuantize(abits)
@@ -382,7 +386,10 @@ class QuantizedLinear(nn.Linear):
         if pact:
             self.alpha = nn.Parameter(torch.tensor(1.)) # trainable clipping factor for PACT
         self.pact = pact
-        self.noise = GaussianNoise(sigma=noise, inference=True)
+        if half:
+            self.noise = GaussianNoise(sigma=noise/2, inference=True, white=white)
+        else:
+            self.noise = GaussianNoise(sigma=noise, inference=True, white=white)
 
     def forward(self, input):
         """ 
