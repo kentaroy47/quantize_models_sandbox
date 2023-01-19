@@ -321,7 +321,7 @@ class GaussianNoise(nn.Module):
             network to generate vectors with smaller values.
     """
 
-    def __init__(self, sigma=0.1, is_relative_detach=False, inference=False, white=False):
+    def __init__(self, sigma=0.1, is_relative_detach=True, inference=False, white=False):
         super().__init__()
         self.sigma = sigma
         self.is_relative_detach = is_relative_detach
@@ -333,7 +333,7 @@ class GaussianNoise(nn.Module):
         if (self.training and self.sigma > 0) or self.inference:
             scale = self.sigma * x.detach() if self.is_relative_detach else self.sigma * x
             if not self.white:
-                sampled_noise = self.noise.repeat(*x.size()).float().normal_() * self.sigma
+                sampled_noise = self.noise.repeat(*x.size()).float().normal_() * scale
             else:
                 sampled_noise = self.noise.repeat(*x.size()).float().random_(-1000000,1000000) * self.sigma / 1000000
             x = x + sampled_noise
@@ -403,9 +403,9 @@ class QuantizedLinear(nn.Linear):
                         self.quantize_w(self.weight) * self.weight_rescale, 
                         self.bias)
         else:
-            return F.linear(self.noise(self.quant(input, self.alpha, self.k)), 
+            return self.noise(F.linear(self.quant(input, self.alpha, self.k), 
                         self.quantize_w(self.weight) * self.weight_rescale, 
-                        self.bias)
+                        self.bias))
 
 # 入力される時に量子化が実行される
 # https://github.com/cornell-zhang/dnn-gating
