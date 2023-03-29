@@ -325,18 +325,21 @@ class GaussianNoise(nn.Module):
         super().__init__()
         self.sigma = sigma
         self.is_relative_detach = is_relative_detach
-        self.noise = torch.tensor(0).to("cuda")
+        self.dummy_param = nn.Parameter(torch.empty(0))
+        self.noise = torch.tensor(0)
         self.inference = inference
         self.white = white
 
     def forward(self, x):
+        device = self.dummy_param.device
+        self.noise.to(device)
         if (self.training and self.sigma > 0) or self.inference:
             scale = self.sigma * x.detach() if self.is_relative_detach else self.sigma * x
             if not self.white:
                 sampled_noise = self.noise.repeat(*x.size()).float().normal_() * self.sigma
             else:
                 sampled_noise = self.noise.repeat(*x.size()).float().random_(-1000000,1000000) * self.sigma / 1000000
-            x = x + sampled_noise
+            x = x + sampled_noise.to(device)
         return x 
 
 
